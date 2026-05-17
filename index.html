@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Production Job Portal - Recruitment System</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Firebase Compat SDK (Mencegah crash jika offline) -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+    
+    <style>
+        .loading-spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            border-left-color: #4f46e5;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .tab-active { border-bottom: 3px solid #4f46e5; color: #4f46e5; font-weight: bold; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+    </style>
+</head>
+<body class="bg-slate-50 min-h-screen text-slate-800 font-sans">
+
+    <!-- Navbar -->
+    <nav class="bg-white border-b border-slate-200 sticky top-0 z-50">
+        <div class="container mx-auto px-4 h-16 flex justify-between items-center">
+            <div class="flex items-center gap-2">
+                <div class="bg-indigo-600 p-2 rounded-lg text-white">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="7" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+                </div>
+                <span class="text-xl font-black tracking-tight text-indigo-900">PROD-CONNECT</span>
+            </div>
+            <div class="flex items-center gap-2">
+                <span id="db-mode-badge" class="text-[10px] md:text-xs font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 border border-amber-200">
+                    Mode: Offline (Lokal)
+                </span>
+                <button id="btn-config-setup" class="text-xs bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg font-bold transition">
+                    ⚙️ Hubungkan Cloud
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Banner Mode Offline -->
+    <div id="setup-warning" class="bg-amber-50 border-b border-amber-200 p-3 text-center">
+        <p class="text-amber-800 text-xs md:text-sm font-medium">
+            📱 <b>Berjalan dalam Mode Offline (Simulasi Browser).</b> Data disimpan di HP/Laptop Anda. 
+            <button id="btn-warning-link" class="underline font-bold hover:text-amber-950 ml-1">Ingin hubungkan ke Database Online?</button>
+        </p>
+    </div>
+
+    <!-- Main Content -->
+    <main class="container mx-auto px-4 py-6 max-w-4xl">
+        
+        <!-- Tab Navigation -->
+        <div class="flex border-b border-slate-200 mb-6 overflow-x-auto no-scrollbar">
+            <button id="tab-find" class="tab-active px-6 py-3 whitespace-nowrap">Cari Kerja</button>
+            <button id="tab-post" class="px-6 py-3 whitespace-nowrap">Pasang Lowongan</button>
+            <button id="tab-manage" class="px-6 py-3 whitespace-nowrap">Kelola Lowongan (Inbox)</button>
+        </div>
+
+        <!-- Section: Cari Kerja -->
+        <section id="sec-find" class="space-y-4">
+            <h2 class="text-lg font-bold">Lowongan Tersedia</h2>
+            <div id="job-feed" class="grid gap-4 text-center py-10">
+                <p class="text-slate-400">Belum ada lowongan.</p>
+            </div>
+        </section>
+
+        <!-- Section: Pasang Lowongan -->
+        <section id="sec-post" class="hidden">
+            <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                <h2 class="text-xl font-bold mb-4 text-indigo-900">Buat Lowongan Baru</h2>
+                <form id="form-post" class="space-y-4">
+                    <div class="grid md:grid-cols-2 gap-4">
+                        <div class="space-y-1">
+                            <label class="text-sm font-semibold">Nama Pekerjaan</label>
+                            <input type="text" id="in-title" placeholder="Contoh: Operator Bubut" required class="w-full border rounded-xl p-3 outline-indigo-600">
+                        </div>
+                        <div class="space-y-1">
+                            <label class="text-sm font-semibold">Lokasi Pabrik</label>
+                            <input type="text" id="in-loc" placeholder="Cikarang, Bekasi" required class="w-full border rounded-xl p-3 outline-indigo-600">
+                        </div>
+                    </div>
+                    
+                    <div class="grid md:grid-cols-2 gap-4">
+                        <div class="space-y-1">
+                            <label class="text-sm font-semibold">Kisaran Gaji</label>
+                            <input type="text" id="in-salary" placeholder="Contoh: 5jt - 7jt" required class="w-full border rounded-xl p-3 outline-indigo-600">
+                        </div>
+                        <div class="space-y-1">
+                            <label class="text-sm font-semibold">Minimal Pengalaman (Tahun)</label>
+                            <input type="number" id="in-exp" placeholder="Contoh: 1" required class="w-full border rounded-xl p-3 outline-indigo-600">
+                        </div>
+                    </div>
+
+                    <div class="space-y-1">
+                        <label class="text-sm font-semibold text-emerald-600">Nomor WhatsApp Anda (Untuk Dihubungi Langsung)</label>
+                        <input type="text" id="in-phone" placeholder="Contoh: 628123456789" required class="w-full border border-emerald-300 rounded-xl p-3 outline-emerald-600">
+                        <p class="text-[10px] text-slate-400 italic">*Gunakan awalan 62 tanpa tanda + atau spasi</p>
+                    </div>
+
+                    <div class="space-y-1">
+                        <label class="text-sm font-semibold">Deskripsi & Syarat Detail</label>
+                        <textarea id="in-desc" rows="4" placeholder="Sebutkan detail pekerjaan dan syarat tambahan..." required class="w-full border rounded-xl p-3 outline-indigo-600"></textarea>
+                    </div>
+                    <button type="submit" class="w-full bg-indigo-600 text-white font-bold py-3 rounded-xl hover:bg-indigo-700 transition">Publikasikan Sekarang</button>
+                </form>
+            </div>
+        </section>
+
+        <!-- Section: Kelola Lowongan (Inbox) -->
+        <section id="sec-manage" class="hidden space-y-4">
+            <h2 class="text-lg font-bold">Inbox Pelamar</h2>
+            <div id="my-jobs-list" class="grid gap-4">
+                <div class="bg-white p-8 rounded-2xl text-center border-2 border-dashed border-slate-200 text-slate-400">Belum ada pelamar di Inbox Anda.</div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Config/Setup Modal -->
+    <div id="config-modal" class="fixed inset-0 bg-slate-900/60 hidden flex items-center justify-center p-4 z-[70]">
+        <div class="bg-white p-6 md:p-8 rounded-3xl max-w-lg w-full shadow-2xl">
+            <h3 class="text-xl font-black text-indigo-950 mb-2">⚙️ Hubungkan Database Cloud</h3>
+            <p class="text-slate-500 text-xs mb-4">Tempelkan (paste) objek Firebase Config Anda di bawah ini agar website Anda terhubung ke penyimpanan online milik Anda sendiri.</p>
+            
+            <textarea id="firebase-config-input" rows="7" placeholder='{
+  "apiKey": "AIzaSy...",
+  "authDomain": "pro-project.firebaseapp.com",
+  "projectId": "pro-project",
+  "storageBucket": "pro-project.appspot.com",
+  "messagingSenderId": "...",
+  "appId": "..."
+}' class="w-full font-mono text-xs border rounded-xl p-4 bg-slate-50 outline-none focus:ring-2 focus:ring-indigo-600"></textarea>
+            
+            <div class="bg-indigo-50 p-4 rounded-xl mt-4 text-xs text-indigo-950 space-y-1">
+                <p class="font-bold">Cara mengaktifkan Firebase:</p>
+                <ol class="list-decimal pl-4 space-y-0.5 text-slate-600">
+                    <li>Buka Firebase Console, pilih/buat proyek baru.</li>
+                    <li>Tambahkan Web App dan salin objek konfigurasi `{ ... }` di atas.</li>
+                    <li>Nyalakan fitur <b>Firestore Database</b> & <b>Anonymous Authentication</b> di Firebase console Anda agar data bisa disimpan secara publik dan aman.</li>
+                </ol>
+            </div>
+
+            <div class="flex gap-2 mt-5">
+                <button id="btn-save-config" class="flex-1 bg-indigo-600 text-white font-bold py-3 rounded-xl hover:bg-indigo-700 transition">Simpan & Hubungkan</button>
+                <button id="btn-close-config" class="px-4 py-3 bg-slate-100 rounded-xl hover:bg-slate-200 transition text-slate-600 text-sm font-bold">Batal</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Message -->
+    <div id="notif-modal" class="fixed inset-0 bg-slate-900/60 hidden flex items-center justify-center p-4 z-[60]">
+        <div class="bg-white p-8 rounded-3xl max-w-sm w-full text-center shadow-2xl">
+            <div id="modal-icon" class="text-5xl mb-4">✔️</div>
+            <h3 id="modal-title" class="text-xl font-black mb-2">Berhasil</h3>
+            <p id="modal-msg" class="text-slate-600 mb-6">Data telah disinkronkan.</p>
+            <button id="btn-close-notif" class="w-full bg-indigo-600 text-white font-bold py-3 rounded-xl transition">Tutup</button>
+        </div>
+    </div>
+
+    <!-- Script Utama (Bebas Bug & Crash) -->
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            // Setup penyimpanan cadangan lokal browser agar selalu aman
+            if(!localStorage.getItem('local_jobs')) localStorage.setItem('local_jobs', JSON.stringify([]));
+            if(!localStorage.getItem('local_inbox')) localStorage.setItem('local_inbox', JSON.stringify([]));
+
+            let firebaseConfig = null;
+            let isCloudMode = false;
+            let db = null;
+            let user = { uid: localStorage.getItem('mock_uid') || 'mock-user-' + Math.random().toString(36).substring(2, 10) };
+            if(!localStorage.getItem('mock_uid')) localStorage.setItem('mock_uid', user.uid);
+
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'recruitment-wa-v3';
+
+            // Memeriksa parameter Firebase Config (Aman dari kesalahan tipe data objek/string)
+            if (typeof __firebase_config !== 'undefined' && __firebase_config) {
+                if (typeof __firebase_config === 'object') {
+                    firebaseConfig = __firebase_config;
+                    isCloudMode = true;
+                } else {
+                    try {
+                        firebaseConfig = JSON.parse(__firebase_config);
+                        isCloudMode = true;
+                    } catch(e) { console.error("Error parse config:", e); }
+                }
+            } 
+            
+            // Periksa konfigurasi custom milik pengguna sendiri
+            if (!firebaseConfig) {
+                const localConfig = localStorage.getItem('custom_prod_firebase_config');
+                if (localConfig) {
+                    try {
+                        firebaseConfig = JSON.parse(localConfig);
+                        isCloudMode = true;
+                    } catch(e) { console.error("Error parse local config:", e); }
+                }
+            }
+
+            // Jalankan mode lokal terlebih dahulu untuk menghindari penundaan atau layar macet
+            if (!isCloudMode) {
+                initAppWithoutCloud();
+            } else {
+                initCloudFirebase();
+            }
+
+            // Fungsi Inisialisasi Cloud Firebase yang Aman
+            function initCloudFirebase() {
+                try {
+                    if (window.firebase && firebaseConfig) {
+                        let app = firebase.apps.length ? firebase.app() : firebase.initializeApp(firebaseConfig);
+                        db = app.firestore();
+                        const auth = app.auth();
+
+                        // Perbarui Badge UI menjadi Mode Cloud Online
+                        const badge = document.getElementById('db-mode-badge');
+                        if(badge) {
+                            badge.innerText = "Mode: Cloud Online ☁️";
+                            badge.className = "text-[10px] md:text-xs font-bold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200";
+                        }
+                        const warning = document.getElementById('setup-warning');
+                        if(warning) warning.classList.add('hidden');
+
+                        // Sistem Autentikasi Tanpa Nama (Rule 3)
+                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                            auth.signInWithCustomToken(__initial_auth_token)
+                                .catch(() => auth.signInAnonymously());
+                        } else {
+                            auth.signInAnonymously().catch(e => console.warn("Anon Auth Error:", e));
+                        }
+
+                        auth.onAuthStateChanged((u) => {
+                            if (u) {
+                                user = u;
+                                loadAllJobs();
+                                loadMyPostedJobs();
+                            }
+                        });
+                    } else {
+                        isCloudMode = false;
+                        initAppWithoutCloud();
+                    }
+                } catch (err) {
+                    console.error("Gagal memulai Firebase, menggunakan fallback offline:", err);
+                    isCloudMode = false;
+                    initAppWithoutCloud();
+                }
+            }
+
+            // Fungsi Inisialisasi Offline Lokal (Dijamin langsung bekerja dalam hitungan milidetik)
+            function initAppWithoutCloud() {
+                const badge = document.getElementById('db-mode-badge');
+                if(badge) {
+                    badge.innerText = "Mode: Offline (Lokal) 📱";
+                    badge.className = "text-[10px] md:text-xs font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 border border-amber-200";
+                }
+                const warning = document.getElementById('setup-warning');
+                if(warning) warning.classList.remove('hidden');
+
+                loadAllJobs();
+                loadMyPostedJobs();
+            }
+
+            // Sistem Navigasi Tab
+            const tabs = ['find', 'post', 'manage'];
+            tabs.forEach(tabName => {
+                const btn = document.getElementById(`tab-${tabName}`);
+                if (btn) {
+                    btn.addEventListener('click', () => {
+                        tabs.forEach(t => {
+                            const sec = document.getElementById(`sec-${t}`);
+                            const tb = document.getElementById(`tab-${t}`);
+                            if (sec) sec.classList.add('hidden');
+                            if (tb) tb.classList.remove('tab-active');
+                        });
+                        const currentSec = document.getElementById(`sec-${tabName}`);
+                        if (currentSec) currentSec.classList.remove('hidden');
+                        btn.classList.add('tab-active');
+                    });
+                }
+            });
+
+            // TOMBOL PASANG LOWONGAN BARU
+            document.getElementById('form-post').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                
+                const jobData = {
+                    title: document.getElementById('in-title').value,
+                    location: document.getElementById('in-loc').value,
+                    salary: document.getElementById('in-salary').value,
+                    experience: document.getElementById('in-exp').value,
+                    phone: document.getElementById('in-phone').value.replace(/\D/g,''),
+                    desc: document.getElementById('in-desc').value,
+                    owner: user.uid,
+                    timestamp: Date.now()
+                };
+
+                if (isCloudMode && db) {
+                    try {
+                        await db.collection('artifacts/' + appId + '/public/data/jobs').add(jobData);
+                        showModal('Berhasil!', 'Lowongan Anda sudah online.', '📢');
+                    } catch (err) {
+                        showModal('Gagal', err.message, '❌');
+                        return;
+                    }
+                } else {
+                    const localJobs = JSON.parse(localStorage.getItem('local_jobs') || '[]');
+                    jobData.id = 'local-job-' + Date.now();
+                    localJobs.push(jobData);
+                    localStorage.setItem('local_jobs', JSON.stringify(localJobs));
+                    
+                    showModal('Berhasil (Offline)', 'Lowongan disimpan di browser ini.', '📢');
+                    loadAllJobs();
+                    loadMyPostedJobs();
+                }
+
+                document.getElementById('form-post').reset();
+                document.getElementById('tab-manage').click(); // Menampilkan tab Inbox pelamar otomatis
+            });
+
+            // FUNGSI MEMBACA DAFTAR LOWONGAN
+            function loadAllJobs() {
+                const container = document.getElementById('job-feed');
+                if(!container) return;
+
+                if (isCloudMode && db) {
+                    db.collection('artifacts/' + appId + '/public/data/jobs')
+                      .onSnapshot((snap) => {
+                          const jobs = [];
+                          snap.forEach(doc => jobs.push({ id: doc.id, ...doc.data() }));
+                          renderJobsHTML(jobs);
+                      }, (err) => {
+                          console.error("Error membaca Firestore:", err);
+                      });
+                } else {
+                    const localJobs = JSON.parse(localStorage.getItem('local_jobs') || '[]');
+                    renderJobsHTML(localJobs);
+                }
+            }
+
+            function renderJobsHTML(jobsList) {
+                const container = document.getElementById('job-feed');
+                if(!container) return;
+                container.innerHTML = '';
+                
+                if(jobsList.length === 0) {
+                    container.innerHTML = '<p class="py-10 text-slate-400">Belum ada lowongan.</p>';
+                    return;
+                }
+                
+                jobsList.forEach(job => {
+                    const el = document.createElement('div');
+                    el.className = "bg-white p-5 rounded-2xl border border-slate-200 shadow-sm text-left transition hover:border-indigo-300 flex flex-col md:flex-row justify-between items-start gap-4";
+                    
+                    const waMessage = encodeURIComponent(`Halo, saya tertarik dengan lowongan "${job.title}" yang di-posting di Prod-Connect. Apakah masih tersedia?`);
+                    const waLink = `https://wa.me/${job.phone}?text=${waMessage}`;
+
+                    el.innerHTML = `
+                        <div class="flex-1">
+                            <div class="flex gap-2 mb-2">
+                                <span class="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded uppercase">${job.location}</span>
+                                <span class="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded uppercase">Min. ${job.experience} Thn</span>
+                            </div>
+                            <h3 class="text-lg font-black mt-1 text-slate-900">${job.title}</h3>
+                            <p class="text-indigo-600 font-bold text-sm mt-1">Gaji: ${job.salary}</p>
+                            <p class="text-sm text-slate-500 mt-2">${job.desc}</p>
+                        </div>
+                        <div class="flex flex-col gap-2 w-full md:w-auto shrink-0">
+                            <button class="btn-apply-job bg-indigo-600 text-white px-6 py-2.5 rounded-xl font-bold hover:bg-indigo-700 transition" data-id="${job.id}" data-title="${job.title}" data-owner="${job.owner}">Kirim Lamaran</button>
+                            <a href="${waLink}" target="_blank" class="bg-emerald-500 text-white px-6 py-2.5 rounded-xl font-bold hover:bg-emerald-600 transition text-center flex items-center justify-center gap-2">
+                                Chat WA
+                            </a>
+                        </div>
+                    `;
+                    container.appendChild(el);
+                });
+
+                // Memasang aksi penanganan tombol Lamar
+                container.querySelectorAll('.btn-apply-job').forEach(btn => {
+                    btn.addEventListener('click', function() {
+                        const jobId = this.getAttribute('data-id');
+                        const title = this.getAttribute('data-title');
+                        const ownerId = this.getAttribute('data-owner');
+                        applyNow(jobId, title, ownerId);
+                    });
+                });
+            }
+
+            // FUNGSI MELAMAR PEKERJAAN
+            async function applyNow(jobId, title, ownerId) {
+                const name = prompt("Masukkan Nama Lengkap Anda:");
+                if(!name) return;
+                const phone = prompt("No. WhatsApp Anda:");
+                if(!phone) return;
+                const exp = prompt("Berapa tahun pengalaman Anda?");
+                if(!exp) return;
+
+                const applicantData = {
+                    jobId,
+                    jobTitle: title,
+                    applicantName: name,
+                    applicantPhone: phone.replace(/\D/g,''),
+                    applicantExp: exp,
+                    applicantUid: user.uid,
+                    jobOwner: ownerId,
+                    timestamp: Date.now()
+                };
+
+                if (isCloudMode && db) {
+                    try {
+                        await db.collection('artifacts/' + appId + '/public/data/inbox').add(applicantData);
+                        showModal('Terkirim!', 'Lamaran Anda sudah masuk ke Inbox Pemberi Kerja.', '🚀');
+                    } catch (err) {
+                        showModal('Gagal', err.message, '❌');
+                    }
+                } else {
+                    const localInbox = JSON.parse(localStorage.getItem('local_inbox') || '[]');
+                    applicantData.id = 'local-app-' + Date.now();
+                    localInbox.push(applicantData);
+                    localStorage.setItem('local_inbox', JSON.stringify(localInbox));
+                    
+                    showModal('Terkirim (Lokal)', 'Lamaran berhasil disimulasikan! Silakan cek tab Kelola Lowongan.', '🚀');
+                    loadMyPostedJobs();
+                }
+            }
+
+            // FUNGSI MEMBACA INBOX PELAMAR
+            function loadMyPostedJobs() {
+                const container = document.getElementById('my-jobs-list');
+                if(!container) return;
+                
+                if (isCloudMode && db) {
+                    db.collection('artifacts/' + appId + '/public/data/inbox')
+                      .onSnapshot((snap) => {
+                          const myApplicants = [];
+                          snap.forEach(d => {
+                              const data = d.data();
+                              if(data.jobOwner === user.uid) {
+                                  myApplicants.push({ id: d.id, ...data });
+                              }
+                          });
+                          renderInboxHTML(myApplicants);
+                      }, (err) => console.error(err));
+                } else {
+                    const localInbox = JSON.parse(localStorage.getItem('local_inbox') || '[]');
+                    const myApplicants = localInbox.filter(app => app.jobOwner === user.uid);
+                    renderInboxHTML(myApplicants);
+                }
+            }
+
+            function renderInboxHTML(myApplicants) {
+                const container = document.getElementById('my-jobs-list');
+                if(!container) return;
+                container.innerHTML = '';
+
+                if(myApplicants.length === 0) {
+                    container.innerHTML = '<div class="bg-white p-8 rounded-2xl text-center border-2 border-dashed border-slate-200 text-slate-400">Belum ada pelamar di Inbox Anda.</div>';
+                    return;
+                }
+
+                myApplicants.forEach(app => {
+                    const el = document.createElement('div');
+                    el.className = "bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 text-left";
+                    el.innerHTML = `
+                        <div>
+                            <span class="text-[10px] font-bold bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded">Pelamar: ${app.jobTitle}</span>
+                            <h4 class="font-black text-slate-800 text-lg mt-1">${app.applicantName}</h4>
+                            <p class="text-xs text-slate-500">Exp: ${app.applicantExp} Thn | No. HP: ${app.applicantPhone}</p>
+                        </div>
+                        <a href="https://wa.me/${app.applicantPhone}" target="_blank" class="bg-emerald-500 text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-emerald-600 transition flex items-center justify-center gap-1 w-full sm:w-auto">
+                             Hubungi WhatsApp
+                        </a>
+                    `;
+                    container.appendChild(el);
+                });
+            }
+
+            // Manajemen Kontrol Modal
+            const btnSetup = document.getElementById('btn-config-setup');
+            const btnWarning = document.getElementById('btn-warning-link');
+            const configModal = document.getElementById('config-modal');
+            const btnCloseConfig = document.getElementById('btn-close-config');
+            const btnSaveConfig = document.getElementById('btn-save-config');
+            const btnCloseNotif = document.getElementById('btn-close-notif');
+
+            if(btnSetup) btnSetup.addEventListener('click', openConfigModal);
+            if(btnWarning) btnWarning.addEventListener('click', openConfigModal);
+            if(btnCloseConfig) btnCloseConfig.addEventListener('click', closeConfigModal);
+            if(btnSaveConfig) btnSaveConfig.addEventListener('click', saveFirebaseConfig);
+            if(btnCloseNotif) btnCloseNotif.addEventListener('click', closeModal);
+
+            function openConfigModal() {
+                const currentConfig = localStorage.getItem('custom_prod_firebase_config') || '';
+                document.getElementById('firebase-config-input').value = currentConfig;
+                configModal.classList.remove('hidden');
+            }
+
+            function closeConfigModal() {
+                configModal.classList.add('hidden');
+            }
+
+            function saveFirebaseConfig() {
+                const val = document.getElementById('firebase-config-input').value.trim();
+                if(!val) {
+                    localStorage.removeItem('custom_prod_firebase_config');
+                    location.reload();
+                    return;
+                }
+                try {
+                    JSON.parse(val);
+                    localStorage.setItem('custom_prod_firebase_config', val);
+                    location.reload();
+                } catch(e) {
+                    alert("Format salah! Harap salin objek konfigurasi Firebase JSON dengan benar.");
+                }
+            }
+
+            function showModal(title, msg, icon) {
+                document.getElementById('modal-title').innerText = title;
+                document.getElementById('modal-msg').innerText = msg;
+                document.getElementById('modal-icon').innerText = icon;
+                document.getElementById('notif-modal').classList.remove('hidden');
+            }
+
+            function closeModal() {
+                document.getElementById('notif-modal').classList.add('hidden');
+            }
+        });
+    </script>
+</body>
+</html>
+
+```
